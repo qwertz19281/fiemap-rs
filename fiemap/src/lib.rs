@@ -12,10 +12,10 @@ extern {
   fn ioctl(fd: c_int, request: c_ulong, ...) -> c_int;
 }
 
-pub struct Fiemap {
+pub struct Fiemap<const FETCH: usize = PAGESIZE> {
   _file: Option<File>,
   fd: c_int,
-  fiemap: C_fiemap,
+  fiemap: C_fiemap<FETCH>,
   cur_idx: usize,
   size: u32,
   ended: bool,
@@ -23,6 +23,12 @@ pub struct Fiemap {
 
 /// Get fiemap for the path and return an iterator of extents
 pub fn fiemap<P: AsRef<Path>>(filepath: P) -> Result<Fiemap> {
+  fiemap_n(filepath)
+}
+
+/// Get fiemap for the path and return an iterator of extents, with specific fetch size
+pub fn fiemap_n<const FETCH: usize, P: AsRef<Path>>(filepath: P) -> Result<Fiemap<FETCH>> {
+  assert!(FETCH != 0 && FETCH <= u32::MAX as _); // TODO this should be a compile time assert or use u32 const generic
   let file = File::open(filepath)?;
   let fd = file.as_raw_fd();
   Ok(Fiemap {
@@ -37,6 +43,12 @@ pub fn fiemap<P: AsRef<Path>>(filepath: P) -> Result<Fiemap> {
 
 /// Get fiemap for the file descriptor and return an iterator of extents
 pub fn fiemap_fd(file: &impl AsRawFd) -> Result<Fiemap> {
+  fiemap_fd_n(file)
+}
+
+/// Get fiemap for the file descriptor and return an iterator of extents, with specific fetch size
+pub fn fiemap_fd_n<const FETCH: usize>(file: &impl AsRawFd) -> Result<Fiemap<FETCH>> {
+  assert!(FETCH != 0 && FETCH <= u32::MAX as _); // TODO this should be a compile time assert or use u32 const generic
   let fd = file.as_raw_fd();
   Ok(Fiemap {
     _file: None,
@@ -48,7 +60,7 @@ pub fn fiemap_fd(file: &impl AsRawFd) -> Result<Fiemap> {
   })
 }
 
-impl Fiemap {
+impl<const FETCH: usize> Fiemap<FETCH> {
   fn get_extents(&mut self) -> Result<()> {
     let req = &mut self.fiemap;
     if self.size != 0 {
@@ -73,7 +85,7 @@ impl Fiemap {
   }
 }
 
-impl Iterator for Fiemap {
+impl<const FETCH: usize> Iterator for Fiemap<FETCH> {
   type Item = Result<FiemapExtent>;
   fn next(&mut self) -> Option<Self::Item> {
     if self.cur_idx >= self.size as usize {
@@ -98,26 +110,26 @@ impl Iterator for Fiemap {
 }
 
 #[repr(C)]
-struct C_fiemap {
+struct C_fiemap<const N: usize = PAGESIZE> {
   fm_start: u64,
   fm_length: u64,
   fm_flags: u32,
   fm_mapped_extents: u32,
   fm_extent_count: u32,
   fm_reserved: u32,
-  fm_extents: [FiemapExtent; PAGESIZE],
+  fm_extents: [FiemapExtent; N],
 }
 
-impl C_fiemap {
+impl<const N: usize> C_fiemap<N> {
   fn new() -> Self {
     Self {
       fm_start: 0,
       fm_length: u64::max_value(),
       fm_flags: 0,
       fm_mapped_extents: 0,
-      fm_extent_count: PAGESIZE as u32,
+      fm_extent_count: N as u32,
       fm_reserved: 0,
-      fm_extents: [FiemapExtent::new(); PAGESIZE],
+      fm_extents: [FiemapExtent::new(); N],
     }
   }
 }
