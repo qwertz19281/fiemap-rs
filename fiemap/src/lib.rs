@@ -13,7 +13,7 @@ extern {
 }
 
 pub struct Fiemap {
-  _file: File,
+  _file: Option<File>,
   fd: c_int,
   fiemap: C_fiemap,
   cur_idx: usize,
@@ -26,7 +26,20 @@ pub fn fiemap<P: AsRef<Path>>(filepath: P) -> Result<Fiemap> {
   let file = File::open(filepath)?;
   let fd = file.as_raw_fd();
   Ok(Fiemap {
-    _file: file, // keep file alive
+    _file: Some(file), // keep file alive
+    fd,
+    fiemap: C_fiemap::new(),
+    cur_idx: 0,
+    size: 0,
+    ended: false,
+  })
+}
+
+/// Get fiemap for the file descriptor and return an iterator of extents
+pub fn fiemap_fd(file: &impl AsRawFd) -> Result<Fiemap> {
+  let fd = file.as_raw_fd();
+  Ok(Fiemap {
+    _file: None,
     fd,
     fiemap: C_fiemap::new(),
     cur_idx: 0,
